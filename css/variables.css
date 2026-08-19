@@ -1,0 +1,141 @@
+/* ==========================================================================
+   Meridian CRM — Design Tokens
+   Palette: deep emerald/teal (trust, growth) + ledger gold (revenue, wins)
+   ========================================================================== */
+
+:root{
+  /* ---- Brand ---- */
+  --brand-teal-900:#0A2E27;
+  --brand-teal-800:#0E3D33;
+  --brand-teal-700:#145C4B;
+  --brand-teal-600:#1B7A63;
+  --brand-teal-500:#1F8A6F;
+  --brand-teal-400:#3BA98A;
+  --brand-teal-100:#E4F3EE;
+
+  --gold-700:#8A6A14;
+  --gold-600:#AD8419;
+  --gold-500:#C9A227;
+  --gold-400:#E0BE4C;
+  --gold-100:#FBF3DA;
+
+  --red-600:#C13B3B;
+  --red-500:#D64545;
+  --red-100:#FBE7E7;
+
+  --blue-600:#2757C9;
+  --blue-500:#2F6FED;
+  --blue-100:#E7EEFD;
+
+  --amber-600:#B87A12;
+  --amber-500:#E0A130;
+  --amber-100:#FDF1DD;
+
+  /* ---- Neutrals (light) ---- */
+  --n-0:#FFFFFF;
+  --n-25:#FAFBFC;
+  --n-50:#F5F7F8;
+  --n-100:#EEF1F2;
+  --n-200:#E3E7E9;
+  --n-300:#CBD2D6;
+  --n-400:#9AA5AB;
+  --n-500:#707B81;
+  --n-600:#535E64;
+  --n-700:#3A4448;
+  --n-800:#242C2F;
+  --n-900:#141A1C;
+
+  /* ---- Type ---- */
+  --font-display:'Sora', 'Segoe UI', sans-serif;
+  --font-body:'Inter', 'Segoe UI', sans-serif;
+  --font-mono:'JetBrains Mono', 'SFMono-Regular', monospace;
+
+  --fs-2xs:.6875rem;
+  --fs-xs:.75rem;
+  --fs-sm:.8125rem;
+  --fs-md:.9375rem;
+  --fs-lg:1.0625rem;
+  --fs-xl:1.25rem;
+  --fs-2xl:1.5rem;
+  --fs-3xl:1.9rem;
+  --fs-4xl:2.4rem;
+
+  /* ---- Spacing ---- */
+  --sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;
+  --sp-6:24px;--sp-7:32px;--sp-8:40px;--sp-9:48px;--sp-10:64px;
+
+  --radius-sm:6px;--radius-md:10px;--radius-lg:14px;--radius-xl:20px;--radius-pill:999px;
+
+  --shadow-sm:0 1px 2px rgba(20,44,38,.06);
+  --shadow-md:0 4px 14px rgba(20,44,38,.08);
+  --shadow-lg:0 12px 32px rgba(20,44,38,.14);
+  --shadow-focus:0 0 0 3px rgba(31,138,111,.25);
+
+  --ease:cubic-bezier(.4,0,.2,1);
+  --dur-fast:.14s;
+  --dur-med:.22s;
+  --dur-slow:.4s;
+
+  /* ---- Semantic (Light) ---- */
+  --bg:var(--n-50);
+  --bg-canvas:var(--n-25);
+  --surface:var(--n-0);
+  --surface-raised:var(--n-0);
+  --surface-sunken:var(--n-100);
+  --border:var(--n-200);
+  --border-strong:var(--n-300);
+  --text:var(--n-900);
+  --text-muted:var(--n-500);
+  --text-faint:var(--n-400);
+  --primary:var(--brand-teal-700);
+  --primary-hover:var(--brand-teal-800);
+  --primary-soft:var(--brand-teal-100);
+  --accent:var(--gold-500);
+  --accent-soft:var(--gold-100);
+  --success:var(--brand-teal-600);
+  --success-soft:var(--brand-teal-100);
+  --danger:var(--red-500);
+  --danger-soft:var(--red-100);
+  --warning:var(--amber-500);
+  --warning-soft:var(--amber-100);
+  --info:var(--blue-500);
+  --info-soft:var(--blue-100);
+  --sidebar-bg:var(--brand-teal-900);
+  --sidebar-text:#CFE3DC;
+  --sidebar-text-dim:#7FA294;
+  --sidebar-active:var(--brand-teal-700);
+  --overlay:rgba(10,22,19,.5);
+}
+
+[data-theme="dark"]{
+  --bg:#0D1417;
+  --bg-canvas:#0A1012;
+  --surface:#141C1F;
+  --surface-raised:#182124;
+  --surface-sunken:#0F1618;
+  --border:#233033;
+  --border-strong:#2E3D40;
+  --text:#EDF2F1;
+  --text-muted:#93A19E;
+  --text-faint:#5E6B69;
+  --primary:var(--brand-teal-500);
+  --primary-hover:var(--brand-teal-400);
+  --primary-soft:rgba(31,138,111,.16);
+  --accent:var(--gold-400);
+  --accent-soft:rgba(201,162,39,.15);
+  --success:var(--brand-teal-400);
+  --success-soft:rgba(31,138,111,.16);
+  --danger:#E36565;
+  --danger-soft:rgba(214,69,69,.16);
+  --warning:var(--amber-500);
+  --warning-soft:rgba(224,161,48,.14);
+  --info:#6C93F0;
+  --info-soft:rgba(47,111,237,.16);
+  --sidebar-bg:#0A1517;
+  --sidebar-text:#CFE3DC;
+  --sidebar-text-dim:#5E7D72;
+  --sidebar-active:var(--brand-teal-700);
+  --overlay:rgba(0,0,0,.6);
+  --shadow-md:0 4px 14px rgba(0,0,0,.35);
+  --shadow-lg:0 12px 32px rgba(0,0,0,.45);
+}
