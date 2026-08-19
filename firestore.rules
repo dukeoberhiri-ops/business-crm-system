@@ -1,0 +1,146 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function myRole() {
+      return myProfile().role;
+    }
+    function isActive() {
+      return myProfile().status == 'active';
+    }
+    function hasAnyRole(roles) {
+      return isSignedIn() && isActive() && myRole() in roles;
+    }
+    function isManagerUp() {
+      return hasAnyRole(['super_admin', 'admin', 'sales_manager']);
+    }
+    function isAdminUp() {
+      return hasAnyRole(['super_admin', 'admin']);
+    }
+    function isOwner(field) {
+      return isSignedIn() && resource.data[field] == request.auth.uid;
+    }
+    function isOwnerOnCreate(field) {
+      return isSignedIn() && request.resource.data[field] == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------------
+    // Users / staff profiles
+    // ---------------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      // Users can edit their own non-privileged fields; admins can edit anyone (incl. role/status).
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status
+      ) || isAdminUp();
+      allow delete: if hasAnyRole(['super_admin']);
+    }
+
+    // ---------------------------------------------------------------
+    // Leads
+    // ---------------------------------------------------------------
+    match /leads/{leadId} {
+      allow read: if isManagerUp() || isOwner('assignedTo') || isOwnerOnCreate('createdBy');
+      allow create: if hasAnyRole(['super_admin', 'admin', 'sales_manager', 'sales_rep']);
+      allow update: if isManagerUp() || isOwner('assignedTo');
+      allow delete: if isManagerUp();
+    }
+
+    // ---------------------------------------------------------------
+    // Customers
+    // ---------------------------------------------------------------
+    match /customers/{customerId} {
+      allow read: if isSignedIn() && isActive();
+      allow create: if hasAnyRole(['super_admin', 'admin', 'sales_manager', 'sales_rep']);
+      allow update: if hasAnyRole(['super_admin', 'admin', 'sales_manager', 'sales_rep', 'support']);
+      allow delete: if isAdminUp();
+    }
+
+    // ---------------------------------------------------------------
+    // Deals / pipeline
+    // ---------------------------------------------------------------
+    match /deals/{dealId} {
+      allow read: if isManagerUp() || isOwner('ownerId') || isOwnerOnCreate('createdBy');
+      allow create: if hasAnyRole(['super_admin', 'admin', 'sales_manager', 'sales_rep']);
+      allow update: if isManagerUp() || isOwner('ownerId');
+      allow delete: if isManagerUp();
+    }
+
+    // ---------------------------------------------------------------
+    // Tasks
+    // ---------------------------------------------------------------
+    match /tasks/{taskId} {
+      allow read: if isManagerUp() || isOwner('assignedTo') || isOwnerOnCreate('createdBy');
+      allow create: if isSignedIn() && isActive();
+      allow update: if isManagerUp() || isOwner('assignedTo') || isOwner('createdBy');
+      allow delete: if isManagerUp() || isOwner('createdBy');
+    }
+
+    // ---------------------------------------------------------------
+    // Calendar events
+    // ---------------------------------------------------------------
+    match /events/{eventId} {
+      allow read: if isSignedIn() && isActive();
+      allow create: if isSignedIn() && isActive();
+      allow update, delete: if isManagerUp() || isOwner('createdBy');
+    }
+
+    // ---------------------------------------------------------------
+    // Notes (polymorphic: leads / customers / deals)
+    // ---------------------------------------------------------------
+    match /notes/{noteId} {
+      allow read: if isSignedIn() && isActive();
+      allow create: if isSignedIn() && isActive() && isOwnerOnCreate('authorId');
+      allow update, delete: if isManagerUp() || isOwner('authorId');
+    }
+
+    // ---------------------------------------------------------------
+    // File metadata (actual bytes live in Storage)
+    // ---------------------------------------------------------------
+    match /files/{fileId} {
+      allow read: if isSignedIn() && isActive();
+      allow create: if isSignedIn() && isActive() && isOwnerOnCreate('uploadedBy');
+      allow delete: if isManagerUp() || isOwner('uploadedBy');
+      allow update: if isManagerUp();
+    }
+
+    // ---------------------------------------------------------------
+    // Communication log
+    // ---------------------------------------------------------------
+    match /communications/{commId} {
+      allow read: if isSignedIn() && isActive();
+      allow create: if isSignedIn() && isActive();
+      allow update, delete: if isManagerUp();
+    }
+
+    // ---------------------------------------------------------------
+    // Notifications (private to each user)
+    // ---------------------------------------------------------------
+    match /notifications/{notifId} {
+      allow read, update, delete: if isOwner('userId');
+      allow create: if isSignedIn();
+    }
+
+    // ---------------------------------------------------------------
+    // Activity log (read-only feed, written by trusted client actions)
+    // ---------------------------------------------------------------
+    match /activity_log/{logId} {
+      allow read: if isSignedIn() && isActive();
+      allow create: if isSignedIn() && isActive();
+      allow update, delete: if false;
+    }
+  }
+}

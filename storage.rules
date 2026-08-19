@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isValidUpload() {
+      // 20MB max, and only common document/image types.
+      return request.resource.size < 20 * 1024 * 1024 &&
+        request.resource.contentType.matches('application/pdf|image/.*|application/msword|application/vnd.*|text/.*');
+    }
+
+    // Lead documents/attachments: /leads/{leadId}/{fileName}
+    match /leads/{leadId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidUpload();
+    }
+
+    // Customer documents/attachments: /customers/{customerId}/{fileName}
+    match /customers/{customerId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidUpload();
+    }
+
+    // Deal documents/attachments: /deals/{dealId}/{fileName}
+    match /deals/{dealId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidUpload();
+    }
+
+    // User avatars: /avatars/{userId}
+    match /avatars/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId && isValidUpload();
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

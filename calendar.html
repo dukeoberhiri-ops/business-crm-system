@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendar · Meridian CRM</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=24 height=24 rx=6 fill=%22%23145C4B%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/variables.css">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/components.css">
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('meridian_theme')||'light');</script>
+</head>
+<body>
+<div class="load-screen" id="loadScreen"><div class="load-mark"></div><div class="load-text">Loading calendar…</div></div>
+<script>
+  // Fail-safe: runs as a classic (non-module) script, so it still executes
+  // even if the module script below fails to load entirely. Prevents an
+  // infinite spinner by surfacing the real error after a few seconds.
+  window.__shellReady = false;
+  document.addEventListener('shell:ready', function () { window.__shellReady = true; });
+  window.addEventListener('error', function (e) {
+    var ls = document.getElementById('loadScreen');
+    if (ls && !window.__shellReady) {
+      ls.innerHTML = '<div style="max-width:320px;text-align:center;padding:24px;font-family:sans-serif;">' +
+        '<p style="font-weight:700;margin-bottom:8px;">Couldn\'t load the app</p>' +
+        '<p style="font-size:13px;color:#667085;word-break:break-word;">' + (e.message || 'Unknown script error') + '</p>' +
+        '<p style="font-size:12px;color:#9AA5AB;margin-top:12px;">Open the browser console (F12) for the full error.</p></div>';
+    }
+  });
+  setTimeout(function () {
+    var ls = document.getElementById('loadScreen');
+    if (ls && !window.__shellReady) {
+      ls.innerHTML = '<div style="max-width:320px;text-align:center;padding:24px;font-family:sans-serif;">' +
+        '<p style="font-weight:700;margin-bottom:8px;">Still loading…</p>' +
+        '<p style="font-size:13px;color:#667085;">This is taking longer than expected. Double-check that Firestore is created and its rules are published, then check the browser console for the exact error.</p>' +
+        '<button onclick="location.reload()" style="margin-top:14px;padding:9px 18px;border-radius:8px;background:#145C4B;color:#fff;border:none;font-weight:600;">Reload</button></div>';
+    }
+  }, 6000);
+</script>
+
+<div class="app-shell" id="app-shell"></div>
+<main class="content" id="pageContent" style="display:none;"></main>
+<script type="module">
+  import "./js/calendar.js";
+  document.addEventListener("shell:ready", () => { document.getElementById("loadScreen").style.display = "none"; });
+  setTimeout(() => { const ls = document.getElementById("loadScreen"); if (ls) ls.style.display = "none"; }, 4000);
+</script>
+</body>
+</html>
