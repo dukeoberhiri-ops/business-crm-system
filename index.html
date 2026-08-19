@@ -69,6 +69,19 @@
         <button type="submit" class="btn btn-primary btn-block btn-lg" id="loginBtn">Sign in</button>
       </form>
 
+      <div class="auth-divider"><span>or explore instantly</span></div>
+      <div class="demo-btn-row">
+        <button type="button" class="btn btn-secondary btn-block demo-login-btn" id="demoAdminBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/><path d="M17 3l1.5 1.5L21 2"/></svg>
+          Login as Demo Admin
+        </button>
+        <button type="button" class="btn btn-secondary btn-block demo-login-btn" id="demoUserBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0116 0v1"/></svg>
+          Login as Demo User
+        </button>
+      </div>
+      <p class="help-text" style="text-align:center;margin-top:var(--sp-3);">No signup needed — instantly explore with sample data. Admin sees everything; User has standard sales-rep access.</p>
+
       <p class="auth-foot-link">Don't have a workspace account? <a href="register.html">Create one</a></p>
     </div>
   </div>
@@ -76,6 +89,7 @@
 
 <script type="module">
 import { loginUser, authErrorMessage, redirectIfAuthed } from "./js/auth.js";
+import { loginAsDemo } from "./js/demo.js";
 import { toast } from "./js/utils.js";
 
 if (new URLSearchParams(location.search).get("suspended")) {
@@ -114,6 +128,25 @@ form.addEventListener("submit", async (e) => {
     btn.disabled = false; btn.textContent = "Sign in";
   }
 });
+
+document.getElementById("demoAdminBtn").addEventListener("click", () => handleDemoLogin("admin"));
+document.getElementById("demoUserBtn").addEventListener("click", () => handleDemoLogin("user"));
+
+async function handleDemoLogin(kind) {
+  const btn = document.getElementById(kind === "admin" ? "demoAdminBtn" : "demoUserBtn");
+  const otherBtn = document.getElementById(kind === "admin" ? "demoUserBtn" : "demoAdminBtn");
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true; otherBtn.disabled = true;
+  btn.textContent = "Signing in…";
+  try {
+    await loginAsDemo(kind);
+    window.location.href = "dashboard.html";
+  } catch (err) {
+    toast({ type: "error", title: "Demo sign-in failed", message: authErrorMessage(err) });
+    btn.disabled = false; otherBtn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
 </script>
 </body>
 </html>

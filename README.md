@@ -174,12 +174,26 @@ security boundary.
 
 ## 5. Sample data
 
-After deploying, log in as an Admin/Super Admin and open **`seed.html`**
-(not linked in the sidebar on purpose). Click **Run Seeder** to populate:
-6 customers, 14 leads across every stage, 16 deals across the pipeline,
-8 tasks, and 6 calendar events — enough for the dashboard, charts, and
-reports to look fully alive immediately. Delete or password-protect this
-page before handing the app to a real customer.
+There are two separate ways to populate data, for two different purposes:
+
+**Demo accounts (for showing the product to prospects):** two permanent
+accounts self-provision the first time anyone clicks their login button on
+the sign-in page — **Login as Demo Admin** (`admin@example.com`) and
+**Login as Demo User** (`user@example.com`), both password `Demo123!`. No
+setup needed; the first click creates the account automatically. Demo
+accounts see a dismissible "Welcome to the demo!" banner once per session,
+and only `admin@example.com` sees a **Demo Controls** tab in Settings with
+**Seed Demo Data** and **Reset Demo Data**. Seeding splits realistic
+customers, leads, deals, tasks, events, notes, and even a couple of sample
+team messages between the two demo accounts, so Admin genuinely sees what
+User does (and vice versa) in real time — a visitor can log in as either
+account and immediately see a populated, two-person CRM in action.
+
+**Generic sample data (for your own real Firebase project):** open
+`seed.html` (not linked in the sidebar) while signed in as any Admin/Super
+Admin to populate your own instance with sample records for testing. This
+is separate from the demo-account seeder above and assigns everything to
+whichever admin runs it.
 
 ---
 
@@ -227,6 +241,8 @@ that domain will be rejected.
 
 - [x] Registration, login, forgot password, email verification, logout
 - [x] Persistent login (Firebase local persistence) + protected routes
+- [x] Two self-provisioning demo accounts with one-click login, a dismissible
+      welcome banner, and admin-only Seed/Reset Demo Data controls
 - [x] 5 roles with distinct permissions, enforced client + server side
 - [x] Dashboard: 8 live stat cards, revenue chart, pipeline chart, sales
       target progress, tasks due today, upcoming meetings, activity feed

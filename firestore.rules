@@ -130,7 +130,8 @@ service cloud.firestore {
     // Notifications (private to each user)
     // ---------------------------------------------------------------
     match /notifications/{notifId} {
-      allow read, update, delete: if isOwner('userId');
+      allow read, update: if isOwner('userId');
+      allow delete: if isOwner('userId') || isManagerUp();
       allow create: if isSignedIn();
     }
 
@@ -140,7 +141,8 @@ service cloud.firestore {
     match /activity_log/{logId} {
       allow read: if isSignedIn() && isActive();
       allow create: if isSignedIn() && isActive();
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isManagerUp();
     }
   }
 }
