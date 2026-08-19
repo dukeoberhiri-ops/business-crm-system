@@ -73,6 +73,8 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .stat-delta{display:inline-flex;align-items:center;gap:3px;font-size:var(--fs-2xs);font-weight:700;margin-top:var(--sp-2);}
 .stat-delta.up{color:var(--success);}
 .stat-delta.down{color:var(--danger);}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--success);display:inline-block;animation:live-pulse 1.8s ease-in-out infinite;}
+@keyframes live-pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(31,138,111,.5);}50%{opacity:.7;box-shadow:0 0 0 4px rgba(31,138,111,0);}}
 
 .progress-bar{height:8px;border-radius:99px;background:var(--surface-sunken);overflow:hidden;}
 .progress-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--primary),var(--brand-teal-400));transition:width .6s var(--ease);}
@@ -225,6 +227,17 @@ tr:hover .row-actions{opacity:1;}
 .calendar-cell.today .cell-date{background:var(--primary);color:#fff;}
 .cell-date{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:var(--fs-2xs);font-weight:700;margin-bottom:4px;}
 .calendar-event{font-size:10px;padding:2px 6px;border-radius:4px;margin-bottom:3px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+
+/* ---------------------------------------------------------------- Demo banner */
+.demo-banner{background:linear-gradient(90deg,var(--brand-teal-700),var(--brand-teal-600));position:sticky;top:68px;z-index:25;animation:demo-slide .3s var(--ease);}
+@keyframes demo-slide{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
+.demo-banner-inner{display:flex;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-3) var(--sp-6);max-width:100%;color:#fff;}
+.demo-banner-icon{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;flex:none;color:var(--gold-400);}
+.demo-banner-text b{font-size:var(--fs-sm);}
+.demo-banner-text p{font-size:var(--fs-xs);color:#CFE3DC;margin-top:2px;line-height:1.5;}
+.demo-banner-close{margin-left:auto;flex:none;color:#CFE3DC;width:28px;height:28px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;}
+.demo-banner-close:hover{background:rgba(255,255,255,.15);color:#fff;}
+@media (max-width:960px){.demo-banner-inner{padding:var(--sp-3) var(--sp-4);}}
 
 /* ---------------------------------------------------------------- Misc */
 .divider{height:1px;background:var(--border);margin:var(--sp-4) 0;}
