@@ -4,11 +4,14 @@
 import { initShell } from "./app-shell.js";
 import { db, COL } from "./firebase-config.js";
 import { formatCurrency, escapeHtml, qs, qsa } from "./utils.js";
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const content = document.getElementById("pageContent");
 let charts = {};
 let cache = { leads: [], deals: [], customers: [], users: [] };
+let activeTab = "sales";
+const loaded = { leads: false, deals: false, customers: false, users: false };
+const failedCols = new Set();
 
 content.innerHTML = `
   <div class="page-header">
@@ -32,6 +35,7 @@ content.innerHTML = `
     <button class="tab-btn" data-tab="conversion">Lead Conversion</button>
     <button class="tab-btn" data-tab="staff">Staff Performance</button>
     <button class="tab-btn" data-tab="annual">Annual</button>
+    <span class="badge badge-teal" style="margin-left:auto;flex:none;align-self:center;gap:5px;"><span class="live-dot"></span>Live</span>
   </div>
 
   <div id="reportRoot" style="margin-top:var(--sp-5);">
@@ -44,40 +48,57 @@ content.innerHTML = `
   </div>
 `;
 
-initShell("reports").then(async () => {
-  await loadData();
-  renderTab("sales");
+initShell("reports").then(() => {
+  startRealtimeListeners();
   qsa("#reportTabs .tab-btn").forEach((btn) => btn.addEventListener("click", () => {
     qsa("#reportTabs .tab-btn").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
-    renderTab(btn.dataset.tab);
+    activeTab = btn.dataset.tab;
+    renderTab(activeTab);
   }));
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
   document.getElementById("exportPdfBtn").addEventListener("click", () => window.print());
 });
 
-async function loadData() {
-  const failures = [];
-  const safe = async (col) => {
-    try {
-      return (await getDocs(collection(db, col))).docs.map((d) => ({ id: d.id, ...d.data() }));
-    } catch (e) {
-      console.error(`Reports: failed to load "${col}"`, e);
-      failures.push({ col, message: e.message, code: e.code });
-      return [];
-    }
-  };
-  const [leads, deals, customers, users] = await Promise.all([safe(COL.LEADS), safe(COL.DEALS), safe(COL.CUSTOMERS), safe(COL.USERS)]);
-  cache = { leads, deals, customers, users };
+function startRealtimeListeners() {
+  listenCol(COL.LEADS, "leads");
+  listenCol(COL.DEALS, "deals");
+  listenCol(COL.CUSTOMERS, "customers");
+  listenCol(COL.USERS, "users");
+}
 
-  if (failures.length) {
-    document.getElementById("reportRoot").insertAdjacentHTML("beforebegin", `
-      <div class="verify-banner" style="background:var(--danger-soft);border-color:var(--danger);color:var(--danger);margin-bottom:var(--sp-4);">
-        Couldn't load data for: <b>${failures.map((f) => f.col).join(", ")}</b>.
-        ${failures[0].code === "permission-denied" ? "This is a Firestore security-rules permission issue for your account's role — reports need Admin, Super Admin, or Sales Manager." : escapeHtml(failures[0].message || "")}
-        Open the browser console for full details.
-      </div>`);
+function listenCol(colName, key) {
+  try {
+    onSnapshot(collection(db, colName), (snap) => {
+      cache[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      loaded[key] = true;
+      failedCols.delete(colName);
+      renderErrorBanner();
+      if (Object.values(loaded).every(Boolean)) renderTab(activeTab);
+    }, (err) => {
+      console.error(`Reports: realtime listener failed for "${colName}"`, err);
+      failedCols.add(colName);
+      loaded[key] = true;
+      renderErrorBanner();
+      if (Object.values(loaded).every(Boolean)) renderTab(activeTab);
+    });
+  } catch (e) {
+    console.error(`Reports: couldn't attach listener for "${colName}"`, e);
+    failedCols.add(colName);
+    loaded[key] = true;
+    renderErrorBanner();
   }
+}
+
+function renderErrorBanner() {
+  const existing = document.getElementById("reportErrorBanner");
+  if (!failedCols.size) { existing?.remove(); return; }
+  const html = `<div class="verify-banner" id="reportErrorBanner" style="background:var(--danger-soft);border-color:var(--danger);color:var(--danger);margin-bottom:var(--sp-4);">
+    Couldn't load live data for: <b>${[...failedCols].join(", ")}</b>.
+    This usually means a Firestore permission issue for your account's role — reports need Admin, Super Admin, or Sales Manager. Open the browser console for full details.
+  </div>`;
+  if (existing) existing.outerHTML = html;
+  else document.getElementById("reportRoot").insertAdjacentHTML("beforebegin", html);
 }
 
 function months(n = 12) {

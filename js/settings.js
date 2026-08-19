@@ -10,6 +10,7 @@ import {
   doc, updateDoc, collection, onSnapshot, query
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { resetPassword, resendVerification } from "./auth.js";
+import { DEMO_ADMIN_EMAIL, seedDemoData, resetDemoData } from "./demo.js";
 
 const content = document.getElementById("pageContent");
 
@@ -19,6 +20,7 @@ content.innerHTML = `
     <button class="tab-btn active" data-tab="profile">Profile</button>
     <button class="tab-btn" data-tab="staff" id="staffTabBtn" style="display:none;">Team &amp; Roles</button>
     <button class="tab-btn" data-tab="preferences">Preferences</button>
+    <button class="tab-btn" data-tab="demo" id="demoTabBtn" style="display:none;">Demo Controls</button>
   </div>
   <div style="margin-top:var(--sp-5);">
     <div class="tab-panel active" data-tab="profile">
@@ -55,6 +57,23 @@ content.innerHTML = `
         <button class="btn btn-primary" id="saveTargetBtn">Save target</button>
       </div>
     </div>
+
+    <div class="tab-panel" data-tab="demo">
+      <div class="card card-pad" style="max-width:640px;">
+        <h3 style="margin-bottom:6px;">Demo Data Controls</h3>
+        <p class="text-muted" style="font-size:var(--fs-sm);margin-bottom:var(--sp-5);">
+          Visible only to the Demo Admin account. Seed adds realistic sample customers, leads,
+          deals, tasks, events, notes, and team messages — split between the Demo Admin and Demo
+          User accounts so the two demo logins interact naturally. Reset wipes all demo-tagged
+          data and reseeds it fresh, so the public demo always looks its best.
+        </p>
+        <div class="flex gap-2" style="margin-bottom:var(--sp-5);">
+          <button class="btn btn-primary" id="seedDemoBtn">Seed Demo Data</button>
+          <button class="btn btn-danger" id="resetDemoBtn">Reset Demo Data</button>
+        </div>
+        <div id="demoLog" class="mono" style="font-size:12px;max-height:240px;overflow-y:auto;background:var(--surface-sunken);border-radius:var(--radius-md);padding:var(--sp-3);display:none;"></div>
+      </div>
+    </div>
   </div>
 `;
 
@@ -71,6 +90,11 @@ initShell("settings").then(({ user, profile }) => {
   if (can(profile.role, "staff.manage")) {
     qs("#staffTabBtn").style.display = "block";
     listenStaff(profile);
+  }
+
+  if (profile.email === DEMO_ADMIN_EMAIL) {
+    qs("#demoTabBtn").style.display = "block";
+    wireDemoControls(user);
   }
 
   wireTabs();
@@ -107,6 +131,49 @@ function wireTabs() {
     btn.classList.add("active");
     qs(`.tab-panel[data-tab="${btn.dataset.tab}"]`).classList.add("active");
   }));
+}
+
+function wireDemoControls(user) {
+  const logEl = qs("#demoLog");
+  const log = (msg) => {
+    logEl.style.display = "block";
+    logEl.innerHTML += `<div>${escapeHtml(msg)}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  qs("#seedDemoBtn").addEventListener("click", async () => {
+    const btn = qs("#seedDemoBtn"), other = qs("#resetDemoBtn");
+    btn.disabled = true; other.disabled = true; btn.textContent = "Seeding…";
+    logEl.innerHTML = "";
+    try {
+      await seedDemoData(user, log);
+      toast({ type: "success", title: "Demo data seeded" });
+    } catch (err) {
+      log(`❌ ${err.message}`);
+      toast({ type: "error", title: "Seeding failed", message: err.message });
+    }
+    btn.disabled = false; other.disabled = false; btn.textContent = "Seed Demo Data";
+  });
+
+  qs("#resetDemoBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "Reset all demo data?",
+      message: "This permanently deletes every demo-seeded customer, lead, deal, task, event, note, and message, then generates a fresh set. This can't be undone.",
+      confirmText: "Reset demo data"
+    });
+    if (!ok) return;
+    const btn = qs("#resetDemoBtn"), other = qs("#seedDemoBtn");
+    btn.disabled = true; other.disabled = true; btn.textContent = "Resetting…";
+    logEl.innerHTML = "";
+    try {
+      await resetDemoData(user, log);
+      toast({ type: "success", title: "Demo data reset", message: "The demo is back to a clean, realistic state." });
+    } catch (err) {
+      log(`❌ ${err.message}`);
+      toast({ type: "error", title: "Reset failed", message: err.message });
+    }
+    btn.disabled = false; other.disabled = false; btn.textContent = "Reset Demo Data";
+  });
 }
 
 function listenStaff(currentProfile) {

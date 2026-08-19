@@ -1,23 +1,33 @@
 /**
- * Meridian CRM — Dashboard
+ * Meridian CRM — Dashboard (fully real-time)
+ * A small number of live onSnapshot listeners feed a shared in-memory
+ * cache; every render function recomputes from that cache, so any change
+ * anywhere in the app (by this user or a teammate) updates the dashboard
+ * instantly with no refresh needed.
  */
-import { initShell, getCurrentProfile } from "./app-shell.js";
+import { initShell } from "./app-shell.js";
 import { db, COL } from "./firebase-config.js";
 import { can } from "./roles.js";
-import { formatCurrency, formatDateTime, timeAgo, skeletonCards, initials, qs } from "./utils.js";
+import { formatCurrency, formatDateTime, timeAgo, skeletonCards, initials, qs, toast } from "./utils.js";
 import {
-  collection, query, where, orderBy, limit, getDocs, onSnapshot, Timestamp
+  collection, query, where, orderBy, limit, onSnapshot, getDocs, addDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 let content, revenueChartInstance, pipelineChartInstance;
+let ctxUser, ctxProfile;
+let statsLoadFailed = false;
+
+const cache = { customers: [], leads: [], deals: [], tasks: [], events: [] };
+const loaded = { customers: false, leads: false, deals: false, tasks: false, events: false };
 
 initShell("dashboard").then(({ user, profile }) => {
+  ctxUser = user; ctxProfile = profile;
   content = document.getElementById("pageContent");
   content.innerHTML = `
     <div class="page-header">
       <div>
         <h1 class="page-title">Welcome back<span id="greetName"></span> 👋</h1>
-        <p class="page-subtitle">Here's what's happening across your pipeline today.</p>
+        <p class="page-subtitle">Here's what's happening across your pipeline today — live.</p>
       </div>
       <div class="flex gap-2">
         <button class="btn btn-secondary" id="exportBtn">
@@ -37,10 +47,7 @@ initShell("dashboard").then(({ user, profile }) => {
       <div class="card" style="margin-bottom:var(--sp-5);">
         <div class="card-header">
           <h3>Revenue &amp; Deals Won</h3>
-          <select id="chartRange" style="width:auto;height:32px;font-size:12px;">
-            <option value="6">Last 6 months</option>
-            <option value="12" selected>Last 12 months</option>
-          </select>
+          <span class="badge badge-teal" style="gap:5px;"><span class="live-dot"></span>Live</span>
         </div>
         <div class="card-body"><canvas id="revenueChart" height="230"></canvas></div>
       </div>
@@ -76,56 +83,117 @@ initShell("dashboard").then(({ user, profile }) => {
       <div class="card-header"><h3>Recent Activity</h3></div>
       <div id="activityFeed"><div class="skeleton-row"><div class="skeleton skeleton-circle"></div><div style="flex:1;"><div class="skeleton skeleton-text"></div></div></div></div>
     </div>
+
+    ${can(profile.role, "leads.viewAll") ? "" : `
+    <div class="card" style="margin-top:var(--sp-5);">
+      <div class="card-header"><h3>Message Your Manager</h3></div>
+      <div class="card-body">
+        <div class="flex gap-2" style="align-items:flex-start;">
+          <textarea id="managerMessageInput" placeholder="Ask a question, flag a blocker, or share an update — it'll land in your manager's notifications instantly." style="flex:1;min-height:56px;"></textarea>
+          <button class="btn btn-primary" id="sendManagerMessageBtn" style="flex:none;">Send</button>
+        </div>
+      </div>
+    </div>`}
   `;
 
+  if (!can(profile.role, "leads.viewAll")) wireManagerMessage(user, profile);
+
   qs("#greetName").textContent = `, ${profile.name.split(" ")[0]}`;
-  loadStats(profile);
-  loadRevenueChart();
-  loadPipelineChart();
-  loadTasksToday(user, profile);
-  loadUpcomingMeetings(user, profile);
+  startRealtimeListeners(user, profile);
   loadActivityFeed();
 });
 
-let statsLoadFailed = false;
-async function safeCount(colName, constraints = []) {
+/* ------------------------------------------------------------- Live listeners */
+function startRealtimeListeners(user, profile) {
+  const isManager = can(profile.role, "leads.viewAll");
+
+  listenCollection(COL.CUSTOMERS, "customers", []);
+  listenCollection(COL.LEADS, "leads", isManager ? [] : [where("assignedTo", "==", user.uid)]);
+  listenCollection(COL.DEALS, "deals", isManager ? [] : [where("ownerId", "==", user.uid)]);
+  listenCollection(COL.TASKS, "tasks", isManager ? [] : [where("assignedTo", "==", user.uid)]);
+  listenCollection(COL.EVENTS, "events", []);
+}
+
+function listenCollection(colName, key, constraints) {
   try {
-    const snap = await getDocs(query(collection(db, colName), ...constraints));
-    return { size: snap.size, docs: snap.docs };
+    const q = query(collection(db, colName), ...constraints);
+    onSnapshot(q, (snap) => {
+      cache[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      loaded[key] = true;
+      renderDashboard();
+    }, (err) => {
+      console.error(`Dashboard: realtime listener failed for "${colName}"`, err);
+      statsLoadFailed = true;
+      loaded[key] = true;
+      renderDashboard();
+    });
   } catch (e) {
-    console.error(`Dashboard: failed to query "${colName}"`, e);
+    console.error(`Dashboard: couldn't attach listener for "${colName}"`, e);
     statsLoadFailed = true;
-    return { size: 0, docs: [] };
+    loaded[key] = true;
+    renderDashboard();
   }
 }
 
-async function loadStats(profile) {
-  const [customers, leadsNew, dealsWon, dealsLost, activeOpps, tasksToday] = await Promise.all([
-    safeCount(COL.CUSTOMERS),
-    safeCount(COL.LEADS, [where("stage", "==", "new")]),
-    safeCount(COL.DEALS, [where("stage", "==", "closed_won")]),
-    safeCount(COL.DEALS, [where("stage", "==", "closed_lost")]),
-    safeCount(COL.DEALS, [where("stage", "not-in", ["closed_won", "closed_lost"])]),
-    safeCount(COL.TASKS, [where("status", "!=", "completed")])
-  ]);
+function renderDashboard() {
+  if (!Object.values(loaded).every(Boolean)) return; // wait for the first snapshot of every collection
+  renderStats();
+  renderRevenueChart();
+  renderPipelineChart();
+  renderTasksToday();
+  renderUpcomingMeetings();
+}
 
-  const monthlyRevenue = dealsWon.docs.reduce((sum, d) => {
-    const data = d.data();
-    const closedAt = data.closedAt?.toDate ? data.closedAt.toDate() : null;
-    const now = new Date();
+/* ------------------------------------------------------------- Manager message */
+async function wireManagerMessage(user, profile) {
+  const btn = document.getElementById("sendManagerMessageBtn");
+  const input = document.getElementById("managerMessageInput");
+  if (!btn || !input) return;
+  btn.addEventListener("click", async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    btn.disabled = true; btn.textContent = "Sending…";
+    try {
+      const snap = await getDocs(query(collection(db, COL.USERS), where("role", "in", ["admin", "super_admin", "sales_manager"])));
+      await Promise.all(snap.docs.map((d) => addDoc(collection(db, COL.NOTIFICATIONS), {
+        userId: d.id, title: `Message from ${profile.name}`, message: text,
+        type: "team_message", read: false, createdAt: serverTimestamp()
+      })));
+      await addDoc(collection(db, COL.ACTIVITY), {
+        description: "sent a message to their manager", actorName: profile.name, createdAt: serverTimestamp()
+      });
+      input.value = "";
+      toast({ type: "success", title: "Message sent", message: snap.empty ? "No managers found yet, but it's on record." : "Your manager will see it in their notifications instantly." });
+    } catch (err) {
+      toast({ type: "error", title: "Couldn't send message", message: err.message });
+    }
+    btn.disabled = false; btn.textContent = "Send";
+  });
+}
+
+/* ------------------------------------------------------------- Stat cards */
+function renderStats() {
+  const now = new Date();
+  const leadsNew = cache.leads.filter((l) => l.stage === "new");
+  const dealsWon = cache.deals.filter((d) => d.stage === "closed_won");
+  const dealsLost = cache.deals.filter((d) => d.stage === "closed_lost");
+  const activeOpps = cache.deals.filter((d) => !["closed_won", "closed_lost"].includes(d.stage));
+
+  const monthlyRevenue = dealsWon.reduce((sum, d) => {
+    const closedAt = d.closedAt?.toDate ? d.closedAt.toDate() : null;
     if (closedAt && closedAt.getMonth() === now.getMonth() && closedAt.getFullYear() === now.getFullYear()) {
-      return sum + (data.value || 0);
+      return sum + (Number(d.value) || 0);
     }
     return sum;
   }, 0);
 
   const cards = [
-    { label: "Total Customers", value: customers.size, icon: "building", cls: "teal", delta: "+4.2%", up: true },
-    { label: "New Leads", value: leadsNew.size, icon: "user-plus", cls: "blue", delta: "+12%", up: true },
-    { label: "Deals Won", value: dealsWon.size, icon: "trending-up", cls: "gold", delta: "+8%", up: true },
-    { label: "Deals Lost", value: dealsLost.size, icon: "grid", cls: "red", delta: "-2%", up: false },
-    { label: "Active Opportunities", value: activeOpps.size, icon: "trending-up", cls: "blue", delta: "+5%", up: true },
-    { label: "Monthly Revenue", value: formatCurrency(monthlyRevenue), icon: "bar-chart", cls: "teal", delta: "+18%", up: true }
+    { label: "Total Customers", value: cache.customers.length, icon: "building", cls: "teal" },
+    { label: "New Leads", value: leadsNew.length, icon: "user-plus", cls: "blue" },
+    { label: "Deals Won", value: dealsWon.length, icon: "trending-up", cls: "gold" },
+    { label: "Deals Lost", value: dealsLost.length, icon: "grid", cls: "red" },
+    { label: "Active Opportunities", value: activeOpps.length, icon: "trending-up", cls: "blue" },
+    { label: "Monthly Revenue", value: formatCurrency(monthlyRevenue), icon: "bar-chart", cls: "teal" }
   ];
 
   document.getElementById("statGrid").innerHTML = cards.map((c) => `
@@ -133,17 +201,11 @@ async function loadStats(profile) {
       <div class="stat-icon ${c.cls}">${iconSvg(c.icon)}</div>
       <div class="stat-label">${c.label}</div>
       <div class="stat-value">${c.value}</div>
-      <div class="stat-delta ${c.up ? "up" : "down"}">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-          ${c.up ? '<path d="M18 15l-6-6-6 6"/>' : '<path d="M6 9l6 6 6-6"/>'}
-        </svg>
-        ${c.delta} vs last month
-      </div>
+      <div class="stat-delta up"><span class="live-dot"></span>Live</div>
     </div>
   `).join("") + (statsLoadFailed ? `<div class="verify-banner" style="grid-column:1/-1;background:var(--danger-soft);border-color:var(--danger);color:var(--danger);">Some dashboard data couldn't load — this usually means a Firestore permission issue for your role. Check the browser console for details.</div>` : "");
 
-  // Sales target
-  const target = profile.monthlyTarget || 100000;
+  const target = ctxProfile.monthlyTarget || 100000;
   const pct = Math.min(100, Math.round((monthlyRevenue / target) * 100));
   document.getElementById("targetProgress").innerHTML = `
     <div class="flex" style="justify-content:space-between;margin-bottom:8px;font-size:var(--fs-sm);">
@@ -155,39 +217,33 @@ async function loadStats(profile) {
   `;
 }
 
-async function loadRevenueChart() {
-  const { docs } = await safeCount(COL.DEALS, [where("stage", "==", "closed_won")]);
+/* ------------------------------------------------------------- Charts */
+function renderRevenueChart() {
+  const won = cache.deals.filter((d) => d.stage === "closed_won");
   const months = Array.from({ length: 12 }).map((_, i) => {
     const d = new Date(); d.setMonth(d.getMonth() - (11 - i));
     return { label: d.toLocaleString("default", { month: "short" }), month: d.getMonth(), year: d.getFullYear() };
   });
-  const revenue = months.map((m) => docs.reduce((sum, d) => {
-    const data = d.data();
-    const closedAt = data.closedAt?.toDate ? data.closedAt.toDate() : null;
-    if (closedAt && closedAt.getMonth() === m.month && closedAt.getFullYear() === m.year) return sum + (data.value || 0);
+  const revenue = months.map((m) => won.reduce((sum, d) => {
+    const closedAt = d.closedAt?.toDate ? d.closedAt.toDate() : null;
+    if (closedAt && closedAt.getMonth() === m.month && closedAt.getFullYear() === m.year) return sum + (Number(d.value) || 0);
     return sum;
   }, 0));
-  const wonCounts = months.map((m) => docs.filter((d) => {
-    const data = d.data();
-    const closedAt = data.closedAt?.toDate ? data.closedAt.toDate() : null;
+  const wonCounts = months.map((m) => won.filter((d) => {
+    const closedAt = d.closedAt?.toDate ? d.closedAt.toDate() : null;
     return closedAt && closedAt.getMonth() === m.month && closedAt.getFullYear() === m.year;
   }).length);
 
   const ctx = document.getElementById("revenueChart");
+  if (!ctx) return;
   if (revenueChartInstance) revenueChartInstance.destroy();
   revenueChartInstance = new Chart(ctx, {
     type: "line",
     data: {
       labels: months.map((m) => m.label),
       datasets: [
-        {
-          label: "Revenue", data: revenue, borderColor: "#145C4B", backgroundColor: "rgba(20,92,75,.1)",
-          fill: true, tension: 0.35, yAxisID: "y"
-        },
-        {
-          label: "Deals Won", data: wonCounts, borderColor: "#C9A227", backgroundColor: "rgba(201,162,39,.1)",
-          fill: false, tension: 0.35, yAxisID: "y1", borderDash: [4, 3]
-        }
+        { label: "Revenue", data: revenue, borderColor: "#145C4B", backgroundColor: "rgba(20,92,75,.1)", fill: true, tension: 0.35, yAxisID: "y" },
+        { label: "Deals Won", data: wonCounts, borderColor: "#C9A227", backgroundColor: "rgba(201,162,39,.1)", fill: false, tension: 0.35, yAxisID: "y1", borderDash: [4, 3] }
       ]
     },
     options: {
@@ -202,19 +258,19 @@ async function loadRevenueChart() {
   });
 }
 
-async function loadPipelineChart() {
-  const { docs } = await safeCount(COL.DEALS);
+function renderPipelineChart() {
   const stages = ["new_lead", "contacted", "qualified", "proposal", "negotiation", "closed_won", "closed_lost"];
   const stageLabels = ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won", "Lost"];
-  const counts = stages.map((s) => docs.filter((d) => d.data().stage === s).length);
+  const counts = stages.map((s) => cache.deals.filter((d) => d.stage === s).length);
 
   const ctx = document.getElementById("pipelineChart");
+  if (!ctx) return;
   if (pipelineChartInstance) pipelineChartInstance.destroy();
   pipelineChartInstance = new Chart(ctx, {
     type: "bar",
     data: {
       labels: stageLabels,
-      datasets: [{ data: counts, backgroundColor: ["#1F8A6F","#3BA98A","#C9A227","#2F6FED","#E0A130","#145C4B","#D64545"], borderRadius: 6 }]
+      datasets: [{ data: counts, backgroundColor: ["#1F8A6F", "#3BA98A", "#C9A227", "#2F6FED", "#E0A130", "#145C4B", "#D64545"], borderRadius: 6 }]
     },
     options: {
       indexAxis: "y",
@@ -224,55 +280,51 @@ async function loadPipelineChart() {
   });
 }
 
-async function loadTasksToday(user, profile) {
+/* ------------------------------------------------------------- Tasks & meetings */
+function renderTasksToday() {
   const el = document.getElementById("tasksToday");
   const start = new Date(); start.setHours(0, 0, 0, 0);
   const end = new Date(); end.setHours(23, 59, 59, 999);
-  const constraints = [
-    where("dueDate", ">=", Timestamp.fromDate(start)),
-    where("dueDate", "<=", Timestamp.fromDate(end))
-  ];
-  if (!can(profile.role, "tasks.assignOthers")) constraints.push(where("assignedTo", "==", user.uid));
-  const { docs } = await safeCount(COL.TASKS, constraints);
-  if (!docs.length) {
+  const todays = cache.tasks.filter((t) => {
+    const d = t.dueDate?.toDate ? t.dueDate.toDate() : null;
+    return d && d >= start && d <= end;
+  });
+  if (!todays.length) {
     el.innerHTML = emptyState("check-square", "Nothing due today", "Enjoy the clear runway — new tasks will show up here.");
     return;
   }
-  el.innerHTML = docs.slice(0, 6).map((d) => {
-    const t = d.data();
-    return `<div class="notif-item">
+  el.innerHTML = todays.slice(0, 6).map((t) => `<div class="notif-item">
       <div class="notif-dot" style="background:${priorityColor(t.priority)};"></div>
       <div style="flex:1;">
         <div class="notif-text"><b>${t.title}</b></div>
         <div class="notif-time">${t.priority || "normal"} priority</div>
       </div>
       <span class="badge badge-gray">${(t.status || "pending").replace("_", " ")}</span>
-    </div>`;
-  }).join("");
+    </div>`).join("");
 }
 
-async function loadUpcomingMeetings(user, profile) {
+function renderUpcomingMeetings() {
   const el = document.getElementById("upcomingMeetings");
-  const now = Timestamp.fromDate(new Date());
-  const { docs } = await safeCount(COL.EVENTS, [where("startTime", ">=", now), orderBy("startTime", "asc"), limit(6)]);
-  if (!docs.length) {
+  const now = new Date();
+  const upcoming = cache.events
+    .filter((e) => { const d = e.startTime?.toDate ? e.startTime.toDate() : null; return d && d >= now; })
+    .sort((a, b) => (a.startTime?.toMillis() || 0) - (b.startTime?.toMillis() || 0));
+  if (!upcoming.length) {
     el.innerHTML = emptyState("calendar", "No upcoming meetings", "Schedule a call or meeting from the Calendar page.");
     return;
   }
-  el.innerHTML = docs.map((d) => {
-    const e = d.data();
-    return `<div class="notif-item">
+  el.innerHTML = upcoming.slice(0, 6).map((e) => `<div class="notif-item">
       <div class="notif-dot" style="background:var(--info);"></div>
       <div style="flex:1;">
         <div class="notif-text"><b>${e.title}</b></div>
         <div class="notif-time">${formatDateTime(e.startTime)}</div>
       </div>
       <span class="badge badge-blue">${e.type || "meeting"}</span>
-    </div>`;
-  }).join("");
+    </div>`).join("");
 }
 
-async function loadActivityFeed() {
+/* ------------------------------------------------------------- Activity feed */
+function loadActivityFeed() {
   const el = document.getElementById("activityFeed");
   try {
     const q = query(collection(db, COL.ACTIVITY), orderBy("createdAt", "desc"), limit(10));
@@ -291,12 +343,16 @@ async function loadActivityFeed() {
           </div>
         </div>`;
       }).join("");
+    }, (err) => {
+      console.error("Dashboard: activity feed listener failed", err);
+      el.innerHTML = emptyState("bar-chart", "No recent activity", "Actions across leads, deals, and tasks will appear here.");
     });
   } catch (e) {
     el.innerHTML = emptyState("bar-chart", "No recent activity", "Actions across leads, deals, and tasks will appear here.");
   }
 }
 
+/* ------------------------------------------------------------- Helpers */
 function priorityColor(p) {
   return p === "high" ? "var(--danger)" : p === "medium" ? "var(--warning)" : "var(--text-faint)";
 }

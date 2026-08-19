@@ -7,6 +7,7 @@ import { requireAuth, logoutUser } from "./auth.js";
 import { db, COL } from "./firebase-config.js";
 import { can, ROLE_LABELS, roleBadgeClass } from "./roles.js";
 import { initTheme, setTheme, initials, timeAgo, qs, qsa, debounce } from "./utils.js";
+import { maybeShowDemoBanner } from "./demo.js";
 import {
   collection, query, where, orderBy, limit, onSnapshot, doc, updateDoc, writeBatch, getDocs
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
@@ -63,6 +64,7 @@ export async function initShell(activeNavId) {
   renderShell(activeNavId, profile);
   wireShellEvents(profile);
   listenNotifications(user.uid);
+  maybeShowDemoBanner(profile);
   document.body.classList.remove("shell-loading");
   document.dispatchEvent(new CustomEvent("shell:ready", { detail: { user, profile } }));
   return { user, profile };
